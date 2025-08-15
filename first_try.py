@@ -1,8 +1,9 @@
 import sounddevice as sd
 import soundfile as sf
 import numpy as np
-from pedalboard import Pedalboard, Reverb, Gain, Delay, PitchShift, Distortion
+from pedalboard import Pedalboard, Reverb, Gain, Compressor, Chorus, Distortion, Bitcrush
 from threading import Thread
+import time
 
 #RIGHT HAND
 #Since the anchor is the wrist, we can have a parameter also for only the thumb
@@ -27,12 +28,16 @@ blocksize = 1024 #23 ms latency
 
 # Define your effect chain
 board = Pedalboard([
-    Gain(),
-    PitchShift(),
-    Distortion(),
-    Reverb(room_size=0.25),
-    Delay(delay_seconds=0.25)
+    Chorus(rate_hz=1, depth=0.25)
+    #Reverb(0.9,wet_level=0.7)
 ])
+
+chorus = Chorus()
+print("rate_hz:", chorus.rate_hz)
+print("depth:", chorus.depth)
+print("mix:", chorus.mix)
+print("feedback:", chorus.feedback)
+print("centre_delay_ms:", chorus.centre_delay_ms)
 
 def audio_callback(outdata, frames, time, status):
     global loop_position
@@ -61,6 +66,7 @@ with sd.OutputStream(channels=2, callback=audio_callback,
     print("Streaming with effects... Press Ctrl+C to stop.")
     try:
         while True:
+            time.sleep(0.1)
             pass
     except KeyboardInterrupt:
         print("Stopping.")

@@ -3,6 +3,7 @@ name = "ai-lab-project"
 version = "0.1.0"
 requires-python = ">3.12,<3.13"
 dependencies = [
+    "aupyom>=0.1.0",
     "ipykernel>=6.30.0",
     "librosa>=0.11.0",
     "mediapipe>=0.10.21",
@@ -10,4 +11,6 @@ dependencies = [
     "pip>=25.1.1",
     "sounddevice>=0.5.2",
     "soundfile>=0.13.1",
+    "torch>=2.8.0",
+    "torch-pitch-shift>=1.2.5",
 ]

@@ -3,12 +3,13 @@ import mediapipe as mp
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
-from pedalboard import Pedalboard, Reverb, Gain, Delay, PitchShift, Distortion
+from pedalboard import Pedalboard, Reverb, Gain, Compressor, Bitcrush, Distortion
 import threading
 
 ''' Threads work both
     GAIN WORKS
-    pitch fucks up
+    BITCRUSH WORKS
+    DISTORSION WORKS
     the others don't work, doesn't change anything'''
 
 #two threads: a visual thread (to track hands) and an audio thread (to control audio)
@@ -16,10 +17,10 @@ import threading
 # globals shared between threads
 current_effects = {
     "gain":        0.0,
-    "pitch":       0.0,
+    "bitcrush":     8,
     "distortion":  0.0,
-    "reverb":      0.25,
-    "delay":       0.25
+    "reverb":      0.5,
+    "compressor":       0.0
 }
 
 effects_lock = threading.Lock() #so that writes from the vision side and reads from the audio side never collide
@@ -55,12 +56,13 @@ def audio_callback(outdata, frames, time, status):
     
     #make the board (we need to make a new one if parameters change)
     board = Pedalboard([
-        Gain(gain_db=effects["gain"]),
-        PitchShift(semitones=effects["pitch"]),
+        Bitcrush(bit_depth=effects["bitcrush"]),
         Distortion(drive_db=effects["distortion"]),
-        Reverb(room_size=effects["reverb"]),
-        Delay(delay_seconds=effects["delay"])
+        Gain(gain_db=effects["gain"]),
+        Compressor(threshold_db=effects["compressor"], ratio=8),
+        Reverb(room_size=effects["reverb"], wet_level=0.7, dry_level=0.1)
     ])
+
     outdata[:] = board(chunk, samplerate)
 
 #now start the audio stream, but it need to be in the thread, so we make a function
@@ -104,7 +106,7 @@ def draw_finger_angles(image, landmrk, label, joint_list):
             if angle > 180.0:
                 angle = 360-angle
             if label=="Right":
-                if angle<150:
+                if angle<160:
                     up[i]=0
                 else:
                     up[i]=1
@@ -219,27 +221,29 @@ with mp_hands.Hands(max_num_hands=2,min_detection_confidence=0.8, min_tracking_c
                     # Draw angles to image from joint list
                     label = hand_handedness.classification[0].label
                     draw_finger_angles(image, hand_landmarks.landmark, label, joint_list)
-    
-        sel = sum(up)
-        rot_deg=np.degrees(rotation_sums[1])
-        rot_norm = np.clip(rot_deg / 180, -1, 1)  # normalizes so that it's in between -1 and 1 (and we can just add or subtract)
 
-        with effects_lock: #inside lock to avoid reads and/or other modifications
-            if up == [1,0,0,0,0]:
-                current_effects["gain"] = rot_norm * 20   # ±20dB
+            sel = sum(up)
+            rot_deg=np.degrees(rotation_sums[1])
+            rot_clamped = np.clip(rot_deg, -60, 60) # Clamp rotation to -50 - +50 degrees
+            rot_norm = rot_clamped / 60.0  # normalizes so that it's in between -1 and 1 (and we can just add or subtract)
 
-            elif up[:2] == [1,1] and up[2:] == [0,0,0]:
-                current_effects["pitch"] = rot_norm * 12  # ±12 semitones
+            with effects_lock: #inside lock to avoid reads and/or other modifications
+                if rot_deg<180:
+                    if up == [1,0,0,0,0]:
+                        current_effects["gain"] = rot_norm * 20   # ±20dB
 
-            elif up[:3] == [1,1,1] and up[3:] == [0,0]:
-                current_effects["distortion"] = max(0, rot_norm) * 15  # 0-15dB drive
+                    elif up == [1,1,0,0,0]:
+                        current_effects["bitcrush"] = ((rot_norm + 1) / 2) * 6 + 2  # in range [4,12] bit
 
-            elif up[:4] == [1,1,1,1] and up[4] == 0:
-                current_effects["reverb"] = np.interp(rot_norm, [-1,1], [0.1,0.9])
+                    elif up== [1,1,1,0,0]:
+                        current_effects["distortion"] = (max(0, rot_norm) * 55)  # 0-55dB drive
 
-            elif up == [1,1,1,1,1]:
-                current_effects["delay"] = np.interp(rot_norm, [-1,1], [0.05,0.75])
-        
+                    elif up== [1,1,1,1,0]:
+                        current_effects["reverb"] = (rot_norm + 1) / 2
+
+                    elif up == [1,1,1,1,1]:
+                        current_effects["compressor"] = ((rot_norm + 1) / 2) * (-50)
+            
         cv2.imshow('Hand Tracking', image)
         if cv2.waitKey(10) & 0xFF == ord('q'):
             break
